@@ -1,0 +1,2 @@
+-lmongoc -lssl -lcrypto -lresolv -ly -lcrypt -ldl -lnsl -lm -lz -L/usr/lib/mysql -lmysqlclient
+
