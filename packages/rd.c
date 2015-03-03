@@ -147,9 +147,8 @@ void f_rd_connect(void){
   		return;
 	}
 	if (rd->conn != NULL && rd->conn->err) {
-	    printf("Error: %s\n", rd->conn->errstr);
   		pop_n_elems(st_num_arg);
-  		push_number(-((long)rd->conn->err));
+  		copy_and_push_string(rd->conn->errstr);
 		free_rd_conn(rd);
   		return;
 	}
