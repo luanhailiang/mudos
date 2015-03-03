@@ -1,2 +1,2 @@
--lhiredis -lmongoc -lbson -lssl -lcrypto -lresolv -ly -lcrypt -ldl -lnsl -lm -lz -L/usr/lib/mysql -lmysqlclient -lpthread -lc
+-static -lhiredis -lmongoc -lbson -lssl -lcrypto -lresolv -ly -lcrypt -ldl -lnsl -lm -lz -L/usr/lib/mysql -lmysqlclient -lpthread -lc
 
