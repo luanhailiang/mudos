@@ -30,6 +30,7 @@
 #include "../hash.h"
 #include "../master.h"
 
+#define MONGO_HAVE_UNISTD
 #include <stdio.h>
 #include <mongo.h>
 
@@ -90,15 +91,20 @@ INLINE void v_to_bson P3(bson *, out, char *, k, svalue_t *, v)
 	}
     case T_MAPPING:
 	{
+		char num[25];
 	    int j = v->u.map->table_size;
 	    mapping_node_t **a = v->u.map->table, *elt;
 	    bson_append_start_object(out, k);
 	    do {
 		for (elt = a[j]; elt; elt = elt = elt->next) {
-			if(elt->values->type != T_STRING){
+			if(elt->values->type == T_STRING){
+				v_to_bson(out,elt->values->u.string,elt->values+1);
+			}else if(elt->values->type == T_NUMBER){
+				sprintf(num,"%ld",v->u.number);
+				v_to_bson(out,num,elt->values+1);
+			}else{
 				continue;
 			}
-			v_to_bson(out,elt->values->u.string,elt->values+1);
 		}
 	    } while (j--);
 	    bson_append_finish_object( out );
@@ -326,7 +332,114 @@ INLINE void bson_to_map P2(const bson *, b, svalue_t *, v){
 	bson_to_mapping(b->data, v);
 }
 
+#ifdef F_MG_GET_OID
+void f_mg_get_oid(){
+	char id[25];
+	bson_oid_t oid;
+	bson_oid_gen( &oid );
+	bson_oid_to_string(&oid,id);
+	copy_and_push_string(id);
+}
+#endif
 
+#ifdef F_BUF_BSON_MAP
+void f_buf_bson_map (void){
+	int size;
+	bson b[1];
+	svalue_t v;
+
+	size = sp->u.buf->size;
+	bson_init_empty(b);
+	bson_init_size( b, size );
+	memcpy(b->data, sp->u.buf->item, size);
+	b->finished = 1;
+	free_buffer(sp->u.buf);
+	/* buff数据不合法 */
+	if(bson_size(b) != size){
+		pop_stack();
+		push_number(0);
+		goto free_bson;
+	}
+	bson_to_mapping(b->data, &v);
+	*sp = v;
+free_bson:
+	bson_destroy( b );
+}
+#endif
+
+#ifdef F_MAP_BSON_BUF
+void f_map_bson_buf (void){
+
+	buffer_t *buf;
+	bson b[1];
+
+	bson_init_empty(b);
+	map_to_bson(sp, b);
+	buf = allocate_buffer(bson_size(b));
+
+	memcpy(buf->item, b->data, bson_size(b));
+	pop_stack();
+	push_refed_buffer(buf);
+	bson_destroy( b );
+}
+#endif
+
+#ifdef F_CMD_MAP_BSON_BUF
+void f_cmd_map_bson_buf (void){
+	int b_size;
+	int s_size;
+	buffer_t *buf;
+	bson b[1];
+
+	bson_init_empty(b);
+	map_to_bson(sp, b);
+
+	b_size = bson_size(b);
+	s_size = strlen((sp-1)->u.string);
+	buf = allocate_buffer(b_size + s_size + 1);
+	memcpy(buf->item, (sp-1)->u.string, s_size);
+	memcpy(buf->item+s_size, " ", 1);
+	memcpy(buf->item+s_size+1, b->data, b_size);
+	pop_n_elems(st_num_arg);
+	push_refed_buffer(buf);
+	bson_destroy( b );
+}
+#endif
+
+#ifdef F_BSON_BUF_FIND
+void f_bson_buf_find(void){
+	int size;
+	bson b[1];
+	bson  sub;
+	svalue_t v;
+	bson_iterator it;
+
+	size = (sp-1)->u.buf->size;
+	bson_init_empty(b);
+	bson_init_size( b, size );
+	memcpy(b->data, (sp-1)->u.buf->item, size);
+	b->finished = 1;
+
+	/* buff不合法 */
+	if(bson_size(b) != size){
+		pop_n_elems(st_num_arg);
+		push_number(0);
+		goto free_bson;
+	}
+	/* 找不到数据 */
+	if(!bson_find( &it, b, sp->u.string )){
+		pop_n_elems(st_num_arg);
+		push_number(0);
+		goto free_bson;
+	}
+	bson_to_v(&it, &v);
+	free_buffer((sp-1)->u.buf);
+	pop_stack();
+	*sp = v;
+free_bson:
+	bson_destroy( b );
+}
+#endif
 
 /* deal with all mongodb connects use handle */
 
@@ -373,7 +486,7 @@ void free_mg_conn P1(mg_t *, mg){
 
 
 
-/* int mg_connect(void) */
+/* int mg_connect(string host, int port, string db, string user, string pass) */
 
 #ifdef F_MG_CONNECT
 void f_mg_connect(void){	
@@ -388,13 +501,112 @@ void f_mg_connect(void){
 		return;
 	}
 	mg = find_mg_conn(handle);
-  	status = mongo_connect( mg->conn, "127.0.0.1", 27017 );
+	switch(st_num_arg){
+	case 0:
+		status = mongo_client( mg->conn, "127.0.0.1", 27017 );
+		break;
+	case 1:
+		status = mongo_client( mg->conn, sp->u.string, 27017 );
+		break;
+	case 2:
+		status = mongo_client( mg->conn, (sp-1)->u.string, sp->u.number );
+		break;
+	case 5:
+		status = mongo_client( mg->conn, (sp-4)->u.string, (sp-3)->u.number );
+		break;
+	default:
+		error("Attempt to connect with error argument\n");
+  		return;
+	}
   	if( status != MONGO_OK ) {
-		push_number(-(mg->conn->err));
+  		pop_n_elems(st_num_arg);
+  		push_number(-((long)mg->conn->err));
 		free_mg_conn(mg);
   		return;
   	}
+  	if(st_num_arg == 5){
+  		status = mongo_cmd_authenticate( mg->conn, (sp-2)->u.string, (sp-1)->u.string, sp->u.string);
+  	  	if( status != MONGO_OK ) {
+  	  		pop_n_elems(st_num_arg);
+  	  		push_number(-((long)mg->conn->err));
+  			free_mg_conn(mg);
+  	  		return;
+  	  	}
+  	}
+  	pop_n_elems(st_num_arg);
   	push_number(handle);
+}
+#endif
+
+/* mapping mg_run_command(int handle, string db, mapping command) */
+
+#ifdef F_MG_RUN_COMMAND
+void f_mg_run_command(void){
+	long handle;
+	char *db;
+	bson command[1];
+
+	mg_t *mg;
+	bson out[1];
+	svalue_t v;
+
+	handle 	= (sp-(st_num_arg-1))->u.number;
+	mg = find_mg_conn(handle);
+	if (!mg) {
+		error("Attempt to command from an invalid mongo handle\n");
+    }
+    db = (sp-(st_num_arg-2))->u.string;
+    map_to_bson(sp, command);
+    bson_print(command);
+	if(mongo_run_command( mg->conn, db, command, out) == MONGO_ERROR ){
+		pop_n_elems(st_num_arg);
+		push_number(-((long)mg->conn->err));
+		goto free_bson;
+	}
+	bson_to_map(out,&v);
+	pop_n_elems(st_num_arg-1);
+	*sp = v;
+	bson_destroy( out );
+free_bson:
+	bson_destroy( command );
+}
+#endif
+
+/* mapping mg_aggregate(int handle, string db,string col, array pipeline) */
+
+#ifdef F_MG_AGGREGATE
+void f_mg_aggregate(void){
+	long handle;
+	char *db;
+	char *col;
+	bson command[1];
+
+	mg_t *mg;
+	bson out[1];
+	svalue_t v;
+
+	handle 	= (sp-(st_num_arg-1))->u.number;
+	mg = find_mg_conn(handle);
+	if (!mg) {
+		error("Attempt to command from an invalid mongo handle\n");
+    }
+    db = (sp-(st_num_arg-2))->u.string;
+    col = (sp-(st_num_arg-3))->u.string;
+    bson_init( command );
+    bson_append_string( command, "aggregate", col);
+    v_to_bson(command,"pipeline",sp);
+    bson_finish( command );
+	if(mongo_run_command( mg->conn, db, command, out) == MONGO_ERROR ){
+		pop_n_elems(st_num_arg);
+		push_number(-((long)mg->conn->err));
+		goto free_bson;
+	}
+	bson_to_map(out,&v);
+	pop_n_elems(st_num_arg-1);
+	*sp = v;
+	bson_destroy( out );
+free_bson:
+	bson_destroy( command );
 }
 #endif
 
@@ -417,8 +629,8 @@ void f_mg_find_one(void){
 	if (!mg) {
 		error("Attempt to find_one from an invalid mongo handle\n");
     }
-	bson_empty(query);
-	bson_empty(fields);
+	bson_init_empty(query);
+	bson_init_empty(fields);
 	switch(st_num_arg){
 		case 4: map_to_bson(sp - (args++), fields);
 		case 3: map_to_bson(sp - (args++), query);
@@ -426,7 +638,7 @@ void f_mg_find_one(void){
 	}
 	if(mongo_find_one(mg->conn,ns,query,fields,out) == MONGO_ERROR ){
 		pop_n_elems(st_num_arg);
-		push_number(-(mg->conn->err));
+		push_number(-((long)mg->conn->err));
 		goto free_bson;
 	} 
 	bson_to_map(out,&v);
@@ -467,8 +679,8 @@ void f_mg_find(void){
 	if (!mg) {
 		error("Attempt to find from an invalid mongo handle\n");
     }
-	bson_empty(query);
-	bson_empty(fields);
+	bson_init_empty(query);
+	bson_init_empty(fields);
 	switch(st_num_arg){
 		case 7: options = (sp - (args++))->u.number;
 		case 6: skip  	= (sp - (args++))->u.number;
@@ -480,7 +692,7 @@ void f_mg_find(void){
 	cursor = mongo_find(mg->conn,ns,query,fields,limit,skip,options);
 	if(cursor == NULL){
 		pop_n_elems(st_num_arg);
-		push_number(-(mg->conn->err));
+		push_number(-((long)mg->conn->err));
 		goto free_bson;
 	} 
 	num = size = cursor->reply->fields.num;
@@ -503,7 +715,7 @@ void f_mg_find(void){
 		sv++;
 	}
 	pop_n_elems(st_num_arg);
-	push_array(v);
+	push_refed_array(v);
 free_mongo:
 	bson_free(cursor);
 free_bson:
@@ -534,7 +746,7 @@ void f_mg_insert(void){
     map_to_bson(sp, data);
 	if(mongo_insert( mg->conn, ns, data, NULL) == MONGO_ERROR ){
 		pop_n_elems(st_num_arg);
-		push_number(-(mg->conn->err));
+		push_number(-((long)mg->conn->err));
 		goto free_bson;
 	}
 	pop_n_elems(st_num_arg);
@@ -571,7 +783,7 @@ void f_mg_update(void){
 	}
 	if( mongo_update( mg->conn, ns, cond, op, flags ,NULL) == MONGO_ERROR ) {
 		pop_n_elems(st_num_arg);
-		push_number(-(mg->conn->err));
+		push_number(-((long)mg->conn->err));
 		goto free_bson;
     }
     pop_n_elems(st_num_arg);
@@ -602,7 +814,7 @@ void f_mg_remove(void){
 
 	if(mongo_remove(mg->conn, ns, cond, NULL) == MONGO_ERROR ){
 		pop_n_elems(st_num_arg);
-		push_number(-(mg->conn->err));
+		push_number(-((long)mg->conn->err));
 		goto free_bson;
 	}
 	pop_n_elems(st_num_arg);
@@ -631,16 +843,55 @@ void f_mg_count(void){
     }
     db = (sp-(st_num_arg-2))->u.string;
     ns = (sp-(st_num_arg-3))->u.string;
-    map_to_bson(sp, cond);
-	count = mongo_count(mg->conn, db, ns, cond);
+    if(st_num_arg == 4){
+		map_to_bson(sp, cond);
+		count = mongo_count(mg->conn, db, ns, cond);
+		bson_destroy( cond );
+    }else{
+    	count = mongo_count(mg->conn, db, ns, NULL);
+    }
 	pop_n_elems(st_num_arg);
 	push_number(count);
-	bson_destroy( cond );
+}
+#endif
+
+/* int mg_reconnect(int handle) */
+#ifdef F_MG_RECONNECT
+void f_mg_reconnect(){
+	long handle;
+	mg_t *mg;
+	handle 	= sp->u.number;
+	mg = find_mg_conn(handle);
+	if (!mg) {
+		error("Attempt to reconnect from an invalid mongo handle\n");
+    }
+	if(mongo_reconnect( mg->conn ) == MONGO_ERROR){
+		sp->u.number = (-((long)mg->conn->err));
+		return;
+	}
+	sp->u.number = 1;
+}
+#endif
+
+/* int mg_check_connection(int handle) */
+#ifdef F_MG_CHECK_CONNECTION
+void f_mg_check_connection(){
+	long handle;
+	mg_t *mg;
+	handle 	= sp->u.number;
+	mg = find_mg_conn(handle);
+	if (!mg) {
+		error("Attempt to check connection from an invalid mongo handle\n");
+    }
+	if(mongo_check_connection( mg->conn ) == MONGO_OK){
+		sp->u.number = 1;
+	}else{
+		sp->u.number = 0;
+	}
 }
 #endif
 
 /* int mg_close(int handle) */
-
 #ifdef F_MG_CLOSE
 void f_mg_close(void){
 	long handle;
