@@ -801,7 +801,7 @@
  * config file.
  */
 /* MAX_LOCAL: maximum number of local variables allowed per LPC function */
-#define CFG_MAX_LOCAL_VARIABLES		25
+#define CFG_MAX_LOCAL_VARIABLES		100
 
 #define CFG_EVALUATOR_STACK_SIZE 	1000
 #define CFG_MAX_CALL_DEPTH		50
@@ -857,6 +857,10 @@
  * 添加mongodb数据库支持
  */
 #define PACKAGE_MG
+ /**
+  * REDIS
+  */
+#define PACKAGE_RD
 /**
  * 将 select 模式修改为 epoll 模式
  * 不定义默认为 select 模式
@@ -879,5 +883,6 @@
 #define EP_MAX_CTL 			4096
 #endif
 
+#define LUANHAILIANG
 
 #endif
