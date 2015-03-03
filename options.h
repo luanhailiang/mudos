@@ -628,7 +628,7 @@
 #endif
 
 /* PACKAGE_DB: efuns for external database access using msql */
-#define PACKAGE_DB
+// #define PACKAGE_DB
 
 /* If PACKAGE_DB is defined above, you must pick ONE of the following supported
  * databases
