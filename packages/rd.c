@@ -177,7 +177,7 @@ void f_rd_command(void){
     cmd = (sp-(st_num_arg-2))->u.string;
     reply = redisCommand(rd->conn,cmd);
     reply_to_v(reply,&v);
-
+    freeReplyObject(reply);
 	pop_n_elems(st_num_arg-1);
 	*sp = v;
 }
