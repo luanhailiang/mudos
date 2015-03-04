@@ -7,7 +7,7 @@ Mar 04 2015:
 
 Jul 14 2012:
 ```
-	add mongodb support in packages/mg.c ,can use mongodb to store data  mongoc-v0.8.1
+	add mongodb support in packages/mg.c , mongoc-v0.8.1
 ```
 
 Jul 07 2012:
