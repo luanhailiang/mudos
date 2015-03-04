@@ -24,6 +24,7 @@
 #include "../swap.h"
 #include "../hash.h"
 #include "../master.h"
+#include "../sprintf.h"
 
 #include <stdio.h>
 #include <hiredis.h>
@@ -107,9 +108,7 @@ INLINE void reply_to_v P2(redisReply *, r, svalue_t *, v){
     		v->u.arr = av;
     		break;
 		case REDIS_REPLY_NIL:
-	    	v->type = T_STRING;
-	    	v->subtype = STRING_MALLOC;
-	    	v->u.string = string_copy("nil","reply_to_v:REDIS_REPLY_NIL");
+			*v =	const0u;
 			break;
 	}
 }
@@ -174,8 +173,16 @@ void f_rd_command(void){
 	if (!rd) {
 		error("Attempt to command from an invalid redis handle\n");
     }
-    cmd = (sp-(st_num_arg-2))->u.string;
+    if(st_num_arg == 2){
+    	cmd = (sp-(st_num_arg-2))->u.string;
+    }else{
+    	cmd = string_print_formatted((sp - st_num_arg + 2)->u.string,
+                               st_num_arg - 2, sp - st_num_arg + 3);
+    }
     reply = redisCommand(rd->conn,cmd);
+    if(st_num_arg != 2){
+    	free_string(cmd);
+    }
     reply_to_v(reply,&v);
     freeReplyObject(reply);
 	pop_n_elems(st_num_arg-1);
