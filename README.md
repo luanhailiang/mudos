@@ -1,9 +1,13 @@
 mudos
 =====
+Mar 04 2015:
+```
+	add redis support in packages/rd.c 
+```
 
 Jul 14 2012:
 ```
-	add mongodb support in packages/mg.c ,can use mongodb to store data
+	add mongodb support in packages/mg.c ,can use mongodb to store data  mongoc-v0.8.1
 ```
 
 Jul 07 2012:
