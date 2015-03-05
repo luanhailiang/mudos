@@ -110,6 +110,9 @@ INLINE void reply_to_v P2(redisReply *, r, svalue_t *, v){
 		case REDIS_REPLY_NIL:
 			*v =	const0u;
 			break;
+		default:
+			error("error redis reply type\n");
+			break;
 	}
 }
 
