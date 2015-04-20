@@ -170,6 +170,7 @@ void f_rd_command(void){
 
 	rd_t *rd;
 	svalue_t v;
+	v = const0;
 
 	handle 	= (sp-(st_num_arg-1))->u.number;
 	rd = find_rd_conn(handle);
@@ -188,6 +189,7 @@ void f_rd_command(void){
     }
     reply_to_v(reply,&v);
     freeReplyObject(reply);
+
 	pop_n_elems(st_num_arg-1);
 	*sp = v;
 }
