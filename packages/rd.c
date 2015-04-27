@@ -183,9 +183,26 @@ void f_rd_command(void){
     	cmd = string_print_formatted((sp - st_num_arg + 2)->u.string,
                                st_num_arg - 2, sp - st_num_arg + 3);
     }
+REDIS_COMMADN:
     reply = redisCommand(rd->conn,cmd);
+    // if(reply == NULL){
+    // 	if(rd->conn->err == 3){
+    // 	//need redis v0.13
+    // 		if(REDIS_OK == redisReconnect(rd->conn)){
+    // 			goto REDIS_COMMADN;
+    // 		}
+    // 	}
+    // 	error("Redis command error : %d %s\n",rd->conn->err,rd->conn->errstr);
+    // }
     if(st_num_arg != 2){
     	free_string(cmd);
+    }
+    if(reply == NULL){
+    	v.type = T_NUMBER;
+		v.u.number = -rd->conn->err;
+		pop_n_elems(st_num_arg-1);
+		*sp = v;
+		return;
     }
     reply_to_v(reply,&v);
     freeReplyObject(reply);
@@ -210,3 +227,5 @@ void f_rd_close(void){
 	sp->u.number = 1;
 }
 #endif
+ 
+
